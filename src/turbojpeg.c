@@ -1611,9 +1611,19 @@ DLLEXPORT int tj3EncodeYUVPlanes8(tjhandle handle, const unsigned char *srcBuf,
   if (pixelFormat == TJPF_CMYK)
     THROW("Cannot generate YUV images from packed-pixel CMYK images");
 
-  if (pitch == 0) pitch = width * tjPixelSize[pixelFormat];
-  else if (pitch < width * tjPixelSize[pixelFormat])
-    THROW("Invalid argument");
+  /* Compute the minimum pitch using 64-bit arithmetic.  width is
+     caller-controlled, so width * tjPixelSize[pixelFormat] can overflow a
+     signed int (which is undefined behavior) and wrap to a small or negative
+     pitch, defeating the validation below. */
+  {
+    unsigned long long minPitch =
+      (unsigned long long)width * (unsigned long long)tjPixelSize[pixelFormat];
+    if (minPitch > (unsigned long long)INT_MAX)
+      THROW("Invalid argument");
+    if (pitch == 0) pitch = (int)minPitch;
+    else if ((unsigned long long)pitch < minPitch)
+      THROW("Invalid argument");
+  }
 
   CATCH_LIBJPEG(this);
 
@@ -2641,9 +2651,20 @@ DLLEXPORT int tj3DecodeYUVPlanes8(tjhandle handle,
   if (pixelFormat == TJPF_CMYK)
     THROW("Cannot decode YUV images into packed-pixel CMYK images.");
 
-  if (pitch == 0) pitch = width * tjPixelSize[pixelFormat];
-  else if (pitch < width * tjPixelSize[pixelFormat])
-    THROW("Invalid argument");
+  /* Compute the minimum pitch using 64-bit arithmetic.  width is
+     caller-controlled, so width * tjPixelSize[pixelFormat] can overflow a
+     signed int (which is undefined behavior) and wrap to a small or negative
+     pitch.  The wrapped pitch would then be used to compute row pointers
+     into the caller's buffer below, causing out-of-bounds access. */
+  {
+    unsigned long long minPitch =
+      (unsigned long long)width * (unsigned long long)tjPixelSize[pixelFormat];
+    if (minPitch > (unsigned long long)INT_MAX)
+      THROW("Invalid argument");
+    if (pitch == 0) pitch = (int)minPitch;
+    else if ((unsigned long long)pitch < minPitch)
+      THROW("Invalid argument");
+  }
   dinfo->image_width = width;
   dinfo->image_height = height;
 

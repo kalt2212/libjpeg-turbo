@@ -97,9 +97,22 @@ DLLEXPORT int GET_NAME(tj3Compress, BITS_IN_JSAMPLE)
   if (!this->lossless && this->subsamp == TJSAMP_UNKNOWN)
     THROW("TJPARAM_SUBSAMP must be specified");
 
-  if (pitch == 0) pitch = width * tjPixelSize[pixelFormat];
-  else if (pitch < width * tjPixelSize[pixelFormat])
-    THROW("Invalid argument");
+  if (pitch == 0) {
+    unsigned long long minPitch =
+      (unsigned long long)width * (unsigned long long)tjPixelSize[pixelFormat];
+    /* width is caller-controlled; the multiplication can overflow a signed
+       int (undefined behavior) and wrap to a small or negative pitch,
+       defeating the validation below. */
+    if (minPitch > (unsigned long long)INT_MAX)
+      THROW("Invalid argument");
+    pitch = (int)minPitch;
+  } else {
+    unsigned long long minPitch =
+      (unsigned long long)width * (unsigned long long)tjPixelSize[pixelFormat];
+    if (minPitch > (unsigned long long)INT_MAX ||
+        (unsigned long long)pitch < minPitch)
+      THROW("Invalid argument");
+  }
 
   if ((row_pointer = (_JSAMPROW *)malloc(sizeof(_JSAMPROW) * height)) == NULL)
     THROW("Memory allocation failure");
@@ -587,20 +600,36 @@ DLLEXPORT int GET_NAME(tj3SaveImage, BITS_IN_JSAMPLE)
   (*dst->start_output) (dinfo, dst);
   (*dinfo->mem->realize_virt_arrays) ((j_common_ptr)dinfo);
 
-  if (pitch == 0) pitch = width * tjPixelSize[pixelFormat];
-  else if (pitch < width * tjPixelSize[pixelFormat])
-    THROW("Invalid argument");
+  if (pitch == 0) {
+    unsigned long long minPitch =
+      (unsigned long long)width * (unsigned long long)tjPixelSize[pixelFormat];
+    /* width is caller-controlled; the multiplication can overflow a signed
+       int (undefined behavior) and wrap to a small or negative pitch,
+       defeating the validation below. */
+    if (minPitch > (unsigned long long)INT_MAX)
+      THROW("Invalid argument");
+    pitch = (int)minPitch;
+  } else {
+    unsigned long long minPitch =
+      (unsigned long long)width * (unsigned long long)tjPixelSize[pixelFormat];
+    if (minPitch > (unsigned long long)INT_MAX ||
+        (unsigned long long)pitch < minPitch)
+      THROW("Invalid argument");
+  }
 
   while (dinfo->output_scanline < dinfo->output_height) {
     _JSAMPLE *rowptr;
 
     if (invert)
       rowptr =
-        (_JSAMPLE *)&buffer[(height - dinfo->output_scanline - 1) * pitch];
+        (_JSAMPLE *)&buffer[(size_t)(height - dinfo->output_scanline - 1) *
+                            (size_t)pitch];
     else
-      rowptr = (_JSAMPLE *)&buffer[dinfo->output_scanline * pitch];
+      rowptr =
+        (_JSAMPLE *)&buffer[(size_t)dinfo->output_scanline * (size_t)pitch];
     memcpy(dst->_buffer[0], rowptr,
-           width * tjPixelSize[pixelFormat] * sizeof(_JSAMPLE));
+           (size_t)width * (size_t)tjPixelSize[pixelFormat] *
+           sizeof(_JSAMPLE));
     (*dst->put_pixel_rows) (dinfo, dst, 1);
     dinfo->output_scanline++;
   }
